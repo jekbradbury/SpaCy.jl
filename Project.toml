@@ -1,0 +1,10 @@
+authors = ["James Bradbury <jekbradbury@gmail.com>"]
+name = "SpaCy"
+uuid = "ecdd732e-44d8-11e8-2d0d-7f068c13520f"
+version = "0.1.0"
+
+[deps]
+Conda = "8f4d0f93-b110-5947-807f-2305c1781a2d"
+Cxx = "a0b5b9ef-44b7-5148-a2d1-f6db19f3c3d2"
+MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
