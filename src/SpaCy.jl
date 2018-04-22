@@ -69,7 +69,7 @@ function load(s::AbstractString)
     end |> PyLanguage
 end
 
-(lang::PyLanguage)(s) = reinterpret(Doc, lang.o(s))
+(lang::PyLanguage)(s) = unsafe_load(convert(Ptr{Doc}, lang.o(s).o))
 
 const flags_t = UInt64
 const attr_t = UInt64
@@ -77,7 +77,12 @@ const hash_t = UInt64
 const POS_enum = Int32 # ?
 const Cbool = Int32
 
-struct LexemeC # doc.c:1811 __pyx_t_5spacy_7structs_LexemeC
+abstract type CythonStruct end
+abstract type CythonObject <: CythonStruct end
+const PythonObject = Union{CythonObject, PyObject_struct}
+const PythonStruct = Union{CythonStruct, PyObject_struct}
+
+struct LexemeC <: CythonStruct # doc.c:1811 __pyx_t_5spacy_7structs_LexemeC
     flags::flags_t
     lang::attr_t
     id::attr_t
@@ -93,7 +98,7 @@ struct LexemeC # doc.c:1811 __pyx_t_5spacy_7structs_LexemeC
     sentiment::Float32
 end
 
-struct TokenC # doc.c:1859 __pyx_t_5spacy_7structs_TokenC
+struct TokenC <: CythonStruct # doc.c:1859 __pyx_t_5spacy_7structs_TokenC
     lex::Ptr{LexemeC} # struct __pyx_t_5spacy_7structs_LexemeC const *lex;
     morph::UInt64 # uint64_t morph;
     pos::POS_enum # enum __pyx_t_5spacy_15parts_of_speech_univ_pos_t pos;
@@ -114,8 +119,8 @@ struct TokenC # doc.c:1859 __pyx_t_5spacy_7structs_TokenC
     ent_id::hash_t # __pyx_t_5spacy_8typedefs_hash_t ent_id;
 end
 
-struct Vocab
-    ob_base::PyObject # PyObject_HEAD
+struct Vocab <: CythonObject
+    ob_base::PyObject_struct # PyObject_HEAD
     vtable::Ptr{Cvoid}
     mem::Ptr{Cvoid} # cymem.cymem.Pool
     strings::Ptr{Cvoid} # spacy.strings.StringStore
@@ -129,7 +134,7 @@ struct Vocab
     _by_orth::Ptr{Cvoid} # preshed.maps.PreshMap
 end
 
-struct Doc # doc.c:2526
+struct Doc <: CythonObject # doc.c:2526
     ob_base::PyObject_struct # PyObject_struct_HEAD
     vtable::Ptr{Cvoid} # struct __pyx_vtabstruct_5spacy_6tokens_3doc_Doc *__pyx_vtab;
     mem::Ptr{Cvoid} # struct __pyx_obj_5cymem_5cymem_Pool *mem;
@@ -153,7 +158,7 @@ struct Doc # doc.c:2526
     __weakref__::PyPtr # PyObject_struct *__weakref__;
 end
 
-struct Span
+struct Span <: CythonObject
     ob_base::PyObject_struct # PyObject_struct_HEAD
     vtable::Ptr{Cvoid}
     doc::Ptr{Doc}
@@ -166,7 +171,7 @@ struct Span
     _vector_norm::PyPtr
 end
 
-struct Token
+struct Token <: CythonObject
     ob_base::PyObject_struct # PyObject_struct_HEAD
     vtable::Ptr{Cvoid}
     vocab::Ptr{Vocab} # cdef readonly Vocab vocab
@@ -175,12 +180,44 @@ struct Token
     doc::Ptr{Doc} # cdef readonly Doc doc
 end
 
-struct Lexeme
+struct Lexeme <: CythonObject
     ob_base::PyObject_struct # PyObject_struct_HEAD
     vtable::Ptr{Cvoid}
     c::Ptr{LexemeC} # cdef LexemeC* c
     vocab::Ptr{Vocab} # cdef readonly Vocab vocab
     orth::attr_t # cdef readonly attr_t orth
+end
+
+function Base.getproperty(x::T, s::Symbol) where {T<:CythonStruct}
+    F = fieldtype(T, s)
+    val = getfield(x, s)
+    if F == PyPtr
+        return PyObject(val)
+    end
+    return (F <: Ptr && s != :__weakref__) ? unsafe_load(val) : val
+end
+
+Base.show(io::IO, x::CythonStruct) = dump(io, x)
+
+function Base.dump(io::IO, x::Ptr{T}, n::Int, indent) where {T<:CythonStruct}
+    print(io, Ptr{T})
+    x = unsafe_load(x)
+    if n > 0
+        for field in fieldnames(T)
+            println(io)
+            print(io, indent, "  ", field, ": ")
+            dump(io, getfield(x, field), n - 1, string(indent, "  "))
+        end
+    end
+end
+
+Base.dump(io::IO, x::Ptr, n::Int, indent) = print(io, x)
+function Base.show(io::IO, x::PyPtr)
+    if x == PyCall.PyPtr_NULL
+        print(io, "Ptr{PyObject} NULL")
+    else
+        print(io, "Ptr{PyObject} ", py"object.__repr__($(PyObject(x)))")
+    end
 end
 
 end # module
